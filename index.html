@@ -355,7 +355,7 @@
     </div>
 
     <script>
-        // Configuração do Supabase - SUBSTITUA PELA SUA URL E KEY
+        // Configuração do Supabase
         const supabaseUrl = 'https://rcksiigfssolqmpfmtgi.supabase.co'
         const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJja3NpaWdmc3NvbHFtcGZtdGdpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUzODc1MjcsImV4cCI6MjA3MDk2MzUyN30.2iPZDyq4QkZSdIq9_BGdbfn5WvNGKIAgpfB0oyWYn5M'
         const supabase = window.supabase.createClient(supabaseUrl, supabaseKey)
@@ -385,59 +385,113 @@
                 return
             }
 
+            // Verificar se Supabase está configurado
+            if (supabaseUrl === 'YOUR_SUPABASE_URL' || supabaseKey === 'YOUR_SUPABASE_ANON_KEY') {
+                alert('❌ ERRO: Configure suas credenciais do Supabase!\n\nVocê precisa:\n1. Criar um projeto no supabase.com\n2. Criar as tabelas do banco\n3. Substituir YOUR_SUPABASE_URL e YOUR_SUPABASE_ANON_KEY pelas suas credenciais reais\n\nQuer uma versão que funciona sem configuração? Me avise!')
+                return
+            }
+
             gameState.playerName = playerName
             showLoading(true)
 
+            // Adicionar logs de debug
+            console.log('🔧 Tentando conectar ao Supabase...')
+            console.log('URL:', supabaseUrl)
+            console.log('Nome do jogador:', playerName)
+            console.log('Código da sala:', roomCode || 'Nova sala')
+
             try {
+                // Testar conexão primeiro
+                const { data: testData, error: testError } = await supabase
+                    .from('rooms')
+                    .select('count')
+                    .limit(1)
+
+                if (testError) {
+                    console.error('❌ Erro de conexão:', testError)
+                    throw new Error(`Erro de conexão com Supabase: ${testError.message}. Verifique se você criou as tabelas no banco.`)
+                }
+
+                console.log('✅ Conexão com Supabase OK!')
+
                 if (roomCode) {
                     await joinRoom(roomCode)
                 } else {
                     await createRoom()
                 }
             } catch (error) {
-                console.error('Erro:', error)
-                alert('Erro ao conectar: ' + error.message)
+                console.error('❌ Erro completo:', error)
+                let errorMessage = 'Erro desconhecido'
+                
+                if (error.message) {
+                    errorMessage = error.message
+                } else if (error.details) {
+                    errorMessage = error.details
+                } else if (error.hint) {
+                    errorMessage = error.hint
+                }
+
+                alert(`❌ ERRO AO CONECTAR:\n\n${errorMessage}\n\n🔧 Possíveis soluções:\n1. Verifique se criou as tabelas no Supabase\n2. Confirme se suas credenciais estão corretas\n3. Verifique se o projeto Supabase está ativo\n\nConsole: Abra F12 para ver mais detalhes`)
                 showLoading(false)
             }
         }
 
         async function createRoom() {
             const roomCode = generateRoomCode()
+            console.log('🎮 Criando nova sala:', roomCode)
             
-            // Criar sala
-            const { data: room, error: roomError } = await supabase
-                .from('rooms')
-                .insert([{
-                    code: roomCode,
-                    host: gameState.playerName,
-                    status: 'waiting',
-                    created_at: new Date()
-                }])
-                .select()
-                .single()
+            try {
+                // Criar sala
+                console.log('📝 Inserindo sala no banco...')
+                const { data: room, error: roomError } = await supabase
+                    .from('rooms')
+                    .insert([{
+                        code: roomCode,
+                        host: gameState.playerName,
+                        status: 'waiting',
+                        created_at: new Date().toISOString()
+                    }])
+                    .select()
+                    .single()
 
-            if (roomError) throw roomError
+                if (roomError) {
+                    console.error('❌ Erro ao criar sala:', roomError)
+                    throw new Error(`Erro ao criar sala: ${roomError.message}. ${roomError.hint || ''}`)
+                }
 
-            // Adicionar jogador à sala
-            const { data: player, error: playerError } = await supabase
-                .from('players')
-                .insert([{
-                    room_id: room.id,
-                    name: gameState.playerName,
-                    is_host: true,
-                    is_alive: true
-                }])
-                .select()
-                .single()
+                console.log('✅ Sala criada:', room)
 
-            if (playerError) throw playerError
+                // Adicionar jogador à sala
+                console.log('👤 Adicionando jogador à sala...')
+                const { data: player, error: playerError } = await supabase
+                    .from('players')
+                    .insert([{
+                        room_id: room.id,
+                        name: gameState.playerName,
+                        is_host: true,
+                        is_alive: true
+                    }])
+                    .select()
+                    .single()
 
-            gameState.roomCode = roomCode
-            gameState.playerId = player.id
-            gameState.gameId = room.id
+                if (playerError) {
+                    console.error('❌ Erro ao adicionar jogador:', playerError)
+                    throw new Error(`Erro ao adicionar jogador: ${playerError.message}. ${playerError.hint || ''}`)
+                }
 
-            showWaitingRoom()
-            subscribeToGameUpdates()
+                console.log('✅ Jogador adicionado:', player)
+
+                gameState.roomCode = roomCode
+                gameState.playerId = player.id
+                gameState.gameId = room.id
+
+                console.log('🎉 Sala criada com sucesso! Estado:', gameState)
+                showWaitingRoom()
+                subscribeToGameUpdates()
+            } catch (error) {
+                console.error('❌ Erro em createRoom:', error)
+                throw error
+            }
         }
 
         async function joinRoom(roomCode) {
@@ -811,8 +865,40 @@
         }
 
         // Verificar se Supabase está configurado
-        if (supabaseUrl === 'https://rcksiigfssolqmpfmtgi.supabase.co || supabaseKey === 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJja3NpaWdmc3NvbHFtcGZtdGdpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUzODc1MjcsImV4cCI6MjA3MDk2MzUyN30.2iPZDyq4QkZSdIq9_BGdbfn5WvNGKIAgpfB0oyWYn5M') {
-            alert('Configure suas credenciais do Supabase no código!')
+        document.addEventListener('DOMContentLoaded', function() {
+            if (supabaseUrl === 'YOUR_SUPABASE_URL' || supabaseKey === 'YOUR_SUPABASE_ANON_KEY') {
+                // Mostrar aviso visual
+                const setupScreen = document.getElementById('setup-screen')
+                const warningDiv = document.createElement('div')
+                warningDiv.innerHTML = `
+                    <div style="background: linear-gradient(45deg, #ff6b6b, #ee5a52); padding: 20px; border-radius: 10px; margin-bottom: 20px; text-align: center;">
+                        <h3>⚠️ CONFIGURAÇÃO NECESSÁRIA</h3>
+                        <p>O jogo precisa ser configurado com Supabase para funcionar.</p>
+                        <p><strong>Precisa de ajuda?</strong> Vou criar uma versão que funciona imediatamente!</p>
+                        <button class="btn" onclick="showInstructions()" style="margin-top: 10px;">📖 Ver Instruções</button>
+                        <button class="btn btn-secondary" onclick="requestOfflineVersion()" style="margin-top: 10px;">🎮 Versão Offline</button>
+                    </div>
+                `
+                setupScreen.insertBefore(warningDiv, setupScreen.firstChild)
+            }
+        })
+
+        function showInstructions() {
+            alert(`🔧 INSTRUÇÕES DE CONFIGURAÇÃO:
+
+1. Acesse supabase.com e crie um projeto gratuito
+2. No painel do Supabase, vá em SQL Editor
+3. Execute o código SQL que eu forneci para criar as tabelas
+4. Vá em Settings → API e copie a URL e a chave pública
+5. No seu código, substitua:
+   - YOUR_SUPABASE_URL pela sua URL real
+   - YOUR_SUPABASE_ANON_KEY pela sua chave real
+
+Ou me peça uma versão que funciona sem configuração!`)
+        }
+
+        function requestOfflineVersion() {
+            alert('💡 VERSÃO OFFLINE: Vou criar uma versão que funciona 100% no navegador, sem necessidade de configuração de servidor. Me avise e eu faço isso para você!')
         }
     </script>
 </body>
